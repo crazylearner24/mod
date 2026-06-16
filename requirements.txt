@@ -1,0 +1,7 @@
+﻿fastapi
+uvicorn[standard]
+beautifulsoup4
+lxml
+python-dotenv
+httpx
+requests
