@@ -8,10 +8,11 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import requests
+from packaging import version as pkg_version
 
 app = FastAPI()
 load_dotenv()
-
+GITHUB_URL="https://api.github.com/repos/crazylearner24/rackify/releases/latest"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -91,12 +92,31 @@ async def supabase_upsert_profile(username: str, password: str, profile_url: str
         insert_response.raise_for_status()
 
 
+# User blacklist
+BLACKLIST = ["baduser1", "hackerman", "spamuser","sit24ad063@sairamit"]
+
+
 @app.get("/")
 def root():
     return {
         "status": "online",
         "mode": "datastore-only"
     }
+
+
+@app.post("/check")
+async def check_user(request: Request):
+    """Check if user is allowed (not blacklisted)"""
+    data = await request.json()
+    username = data.get("username", "").strip().lower()
+    
+    if not username:
+        raise HTTPException(status_code=400, detail="Username is required")
+    
+    if username in [u.lower() for u in BLACKLIST]:
+        return {"status": "blocked"}
+    
+    return {"status": "allowed"}
 
 # @app.post("/api/profile")
 # async def store_profile(request: Request):
@@ -119,12 +139,59 @@ def root():
 #         raise HTTPException(status_code=500, detail=str(e))
 
 
+def get_github_release():
+    """Fetch latest release from GitHub"""
+    try:
+        response = requests.get(GITHUB_URL, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        latest_version = data.get("tag_name", "v1.0.0").replace("v", "")
+        downloads = {}
+        
+        for asset in data.get("assets", []):
+            downloads[asset["name"]] = asset["browser_download_url"]
+        
+        return latest_version, downloads
+    except Exception as e:
+        print(f"GitHub fetch error: {e}")
+        return None, {}
+
+
+def check_update_needed(app_version: str) -> tuple[bool, str]:
+    """Check if update is required by comparing versions"""
+    try:
+        latest_version, _ = get_github_release()
+        if latest_version is None:
+            return False, ""  # No update check if GitHub fails
+        
+        is_update_needed = pkg_version.parse(app_version) < pkg_version.parse(latest_version)
+        return is_update_needed, latest_version
+    except Exception as e:
+        print(f"Version comparison error: {e}")
+        return False, ""  # No update check if comparison fails
+
+
 @app.post("/api/auth")
-async def auth(request:Request):
+async def auth(request: Request):
+    """Authentication endpoint - verify code and check for updates"""
     data = await request.json()
-    if data["code"]=="welcome@123" or data["code"]=="vanakamdamapla":
-        return {"message":"allow"}
-    return {"message":"dont allow"}
+    auth_code = data.get("code", "")
+    app_version = data.get("app_version", "1.0.0")  # App sends its version
+    
+    if auth_code != "welcome@123" and auth_code != "vanakamdamapla":
+        return {"message": "dont allow"}
+    
+    # Fetch latest release and check if update is needed
+    update_needed, latest_version = check_update_needed(app_version)
+    _, downloads = get_github_release()
+    
+    return {
+        "message": "allow",
+        "update_required": update_needed,
+        "latest_version": latest_version,
+        "downloads": downloads
+    }
 
 @app.post("/api/log")
 async def logger(request: Request):
@@ -149,4 +216,6 @@ async def logger(request: Request):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
         
+
+
 
