@@ -92,8 +92,7 @@ async def supabase_upsert_profile(username: str, password: str, profile_url: str
         insert_response.raise_for_status()
 
 
-# User blacklist
-BLACKLIST = ["baduser1", "hackerman", "spamuser","sit24ad063@sairamit"]
+BLACKLIST = []
 
 
 @app.get("/")
